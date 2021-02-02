@@ -11,7 +11,6 @@ Converts playlist contained inside BMBF's config.json into .bplist playlists
 import os
 import base64
 import json
-from time import sleep
 from sys import argv
 
 import requests
@@ -59,38 +58,55 @@ def main():
     choice = int(choice) - 1
     bmbf_playlist = playlists[choice]
 
-    print(f"Downloading \"{bmbf_playlist['PlaylistName']}\"...")
+    print(f"Exporting \"{bmbf_playlist['PlaylistName']}\"...")
 
-    bplist_playlist = convert_playlist(bmbf_playlist)
+    choice = input(f"Do you wish to download the songs' covers ? It might increase the resulting filesize to a few megabytes ! yes/[no]")
+    download_covers = False if "y" not in choice.lower() else True
+
+    bplist_playlist = convert_playlist(bmbf_playlist, covers=download_covers)
 
     with open(bmbf_playlist["PlaylistID"] + ".bplist", "w+") as f:
         json.dump(bplist_playlist, f)
 
     print("Successfully exported !")
 
-def convert_playlist(playlist):
-    return {
+def convert_playlist(playlist, covers=True):
+    playlist_out = {
                 "playlistTitle": playlist["PlaylistName"],
                 "playlistAuthor": "BMBF Python Playlist exporter",
                 "playlistDescription": f"This playlist was exported from \"{playlist['PlaylistName']}\" initially made on BMBF",
-                "songs": [convert_song(song) for song in playlist["SongList"]]
+                "songs": [convert_song(song, covers=covers) for song in playlist["SongList"]]
             }
 
-def convert_song(song):
+    if os.path.isfile("playlist_cover.png"):
+        print("Detected playlist cover under playlist_cover.png, using it...")
+        with open("playlist_cover.png", "rb") as cover_image:
+            cover_picture = base64.b64encode(cover_image.read()).decode("utf8")
+            cover_b64_uri = "data:image/png;base64," + cover_picture
+            playlist_out["image"] = cover_b64_uri
+
+    return playlist_out
+
+def convert_song(song, covers=True):
+    print(f"\tExporting \"{song['SongName']}\"")
     song_hash = song["SongID"].replace("custom_level_", "").upper()
 
-    return {
+    song_out = {
         "hash": song_hash,
         "songName": song["SongName"],
-        "image": download_b64_cover(song_hash)
     }
 
+    if covers:
+        song_out["image"] = download_b64_cover(song_hash)
+
+    return song_out
+
 def download_b64_cover(song_hash):
-    #sleep(1)
     try:
         song_record = requests.get(BEATSAVER_BYHASH_URL + song_hash.lower(), headers=BEATSAVER_HEADERS).json()
     except json.JSONDecodeError:
         print(f"Beatsaver API didn't respond correctly, skipping the song's cover download ...")
+
         return PURPLE_SQUARE_BASE64
     song_name = song_record["metadata"]["songName"]
     print(f"\tDownloading cover picture for \"{song_name}\"")
